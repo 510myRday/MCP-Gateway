@@ -1,0 +1,49 @@
+{
+  "version": 2,
+  "listen": "127.0.0.1:8765",
+  "allowNonLoopback": false,
+  "mode": "both",
+  "apiPrefix": "/api/v2",
+  "security": {
+    "mcp": {
+      "enabled": false,
+      "token": "replace-with-random-mcp-token"
+    },
+    "admin": {
+      "enabled": true,
+      "token": "replace-with-random-admin-token"
+    }
+  },
+  "transport": {
+    "streamableHttp": {
+      "basePath": "/api/v2/mcp"
+    },
+    "sse": {
+      "basePath": "/api/v2/sse"
+    }
+  },
+  "defaults": {
+    "lifecycle": "pooled",
+    "idleTtlMs": 300000,
+    "requestTimeoutMs": 60000,
+    "maxRetries": 2,
+    "maxResponseWaitIterations": 100
+  },
+  "servers": [
+    {
+      "name": "filesystem",
+      "description": "Filesystem MCP",
+      "command": "npx",
+      "args": [
+        "-y",
+        "@modelcontextprotocol/server-filesystem",
+        "D:\\Code_Save"
+      ],
+      "cwd": "",
+      "env": {},
+      "stdioProtocol": "auto",
+      "lifecycle": "pooled",
+      "enabled": true
+    }
+  ]
+}

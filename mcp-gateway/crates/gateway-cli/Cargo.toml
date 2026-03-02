@@ -1,0 +1,19 @@
+[package]
+name = "gateway-cli"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[[bin]]
+name = "gateway"
+path = "src/main.rs"
+
+[dependencies]
+anyhow.workspace = true
+axum.workspace = true
+chrono.workspace = true
+clap.workspace = true
+tokio.workspace = true
+
+gateway-core = { path = "../gateway-core" }
+gateway-http = { path = "../gateway-http" }

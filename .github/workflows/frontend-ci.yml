@@ -1,0 +1,29 @@
+name: frontend-ci
+
+on:
+  push:
+    paths:
+      - "mcp-gateway-ui/**"
+      - ".github/workflows/frontend-ci.yml"
+  pull_request:
+    paths:
+      - "mcp-gateway-ui/**"
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+          cache-dependency-path: mcp-gateway-ui/package-lock.json
+      - run: npm ci
+        working-directory: mcp-gateway-ui
+      - run: npm run typecheck
+        working-directory: mcp-gateway-ui
+      - run: npm run test
+        working-directory: mcp-gateway-ui
+      - run: npm run build
+        working-directory: mcp-gateway-ui

@@ -1,0 +1,11 @@
+[package]
+name = "gateway-integration-tests"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+publish = false
+
+[dev-dependencies]
+gateway-core = { path = "../gateway-core" }
+serde_json.workspace = true
+tempfile.workspace = true

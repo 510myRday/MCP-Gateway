@@ -1,0 +1,26 @@
+name: backend-ci
+
+on:
+  push:
+    paths:
+      - "mcp-gateway/**"
+      - ".github/workflows/backend-ci.yml"
+  pull_request:
+    paths:
+      - "mcp-gateway/**"
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - name: Format check
+        run: cargo fmt --all -- --check
+        working-directory: mcp-gateway
+      - name: Clippy
+        run: cargo clippy --workspace --all-targets --all-features -- -D warnings
+        working-directory: mcp-gateway
+      - name: Test
+        run: cargo test --workspace
+        working-directory: mcp-gateway

@@ -1,0 +1,9 @@
+target
+**/target
+node_modules
+**/node_modules
+
+# Tauri CLI auto-generated files
+mcp-gateway-ui/src-tauri/gen
+dist
+**/dist

@@ -1,0 +1,111 @@
+name: desktop-release
+
+on:
+  workflow_dispatch:
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    name: build-${{ matrix.target }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: windows-latest
+            target: x86_64-pc-windows-msvc
+            bin_ext: .exe
+          - os: windows-11-arm
+            target: aarch64-pc-windows-msvc
+            bin_ext: .exe
+          - os: macos-15-intel
+            target: x86_64-apple-darwin
+            bin_ext: ""
+          - os: macos-15
+            target: aarch64-apple-darwin
+            bin_ext: ""
+          - os: ubuntu-latest
+            target: x86_64-unknown-linux-gnu
+            bin_ext: ""
+          - os: ubuntu-24.04-arm
+            target: aarch64-unknown-linux-gnu
+            bin_ext: ""
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+          cache-dependency-path: mcp-gateway-ui/package-lock.json
+
+      - name: Install frontend deps
+        run: npm ci
+        working-directory: mcp-gateway-ui
+
+      - name: Build frontend dist
+        run: npm run build
+        working-directory: mcp-gateway-ui
+
+      - name: Install Linux system deps for Tauri
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            libgtk-3-dev \
+            libwebkit2gtk-4.1-dev \
+            libsoup-3.0-dev \
+            librsvg2-dev \
+            patchelf
+          if ! sudo apt-get install -y libayatana-appindicator3-dev; then
+            sudo apt-get install -y libappindicator3-dev
+          fi
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.target }}
+
+      - name: Build Tauri desktop binary
+        run: npx tauri build --ci --no-bundle --target ${{ matrix.target }}
+        working-directory: mcp-gateway-ui
+
+      - name: Prepare release binary
+        shell: pwsh
+        run: |
+          $source = "mcp-gateway-ui/src-tauri/target/${{ matrix.target }}/release/mcp-gateway-ui${{ matrix.bin_ext }}"
+          $destDir = "release"
+          $dest = Join-Path $destDir "mcp-gateway-ui-${{ matrix.target }}${{ matrix.bin_ext }}"
+          New-Item -ItemType Directory -Force -Path $destDir | Out-Null
+          Copy-Item -Path $source -Destination $dest -Force
+          Get-Item $dest | Format-List FullName,Length
+
+      - name: Upload desktop binary
+        uses: actions/upload-artifact@v4
+        with:
+          name: mcp-gateway-ui-${{ matrix.target }}
+          path: release/mcp-gateway-ui-${{ matrix.target }}${{ matrix.bin_ext }}
+
+  publish:
+    if: startsWith(github.ref, 'refs/tags/')
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Download desktop binary artifact
+        uses: actions/download-artifact@v4
+        with:
+          path: release-artifacts
+
+      - name: Attach binary to GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          generate_release_notes: true
+          files: |
+            release-artifacts/**/mcp-gateway-ui-*
