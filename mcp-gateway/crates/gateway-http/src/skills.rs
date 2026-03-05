@@ -751,7 +751,9 @@ impl SkillsService {
         let roots_for_scan = roots.clone();
         let discovered = tokio::task::spawn_blocking(move || discover_skills_sync(&roots_for_scan))
             .await
-            .map_err(|error| AppError::Internal(format!("skills discovery join error: {error}")))??;
+            .map_err(|error| {
+                AppError::Internal(format!("skills discovery join error: {error}"))
+            })??;
 
         {
             let mut guard = self.discovery_cache.write().await;
@@ -1215,7 +1217,11 @@ fn roots_signature(roots: &[String]) -> String {
         .iter()
         .map(|root| root.trim())
         .filter(|root| !root.is_empty())
-        .map(|root| normalize_lexical_path(Path::new(root)).to_string_lossy().to_string())
+        .map(|root| {
+            normalize_lexical_path(Path::new(root))
+                .to_string_lossy()
+                .to_string()
+        })
         .collect::<Vec<_>>();
     normalized.sort_by_key(|item| item.to_ascii_lowercase());
     normalized.dedup_by(|left, right| left.eq_ignore_ascii_case(right));
@@ -1252,9 +1258,8 @@ async fn execute_skill_command(
     ));
 
     let status = match tokio::time::timeout(Duration::from_millis(timeout_ms), child.wait()).await {
-        Ok(wait_result) => {
-            wait_result.map_err(|error| AppError::Upstream(format!("failed to execute command: {error}")))?
-        }
+        Ok(wait_result) => wait_result
+            .map_err(|error| AppError::Upstream(format!("failed to execute command: {error}")))?,
         Err(_) => {
             let _ = child.start_kill();
             let _ = child.wait().await;
@@ -1297,10 +1302,9 @@ where
     let mut truncated = false;
 
     loop {
-        let read = reader
-            .read(&mut chunk)
-            .await
-            .map_err(|error| AppError::Upstream(format!("failed to read command output: {error}")))?;
+        let read = reader.read(&mut chunk).await.map_err(|error| {
+            AppError::Upstream(format!("failed to read command output: {error}"))
+        })?;
         if read == 0 {
             break;
         }
