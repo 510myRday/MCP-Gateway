@@ -152,15 +152,19 @@ impl ProcessManager {
 
     pub async fn reap_idle(&self, idle_ttl: Duration) {
         let now = Instant::now();
+        let candidates = {
+            let guard = self.pooled.read().await;
+            guard
+                .iter()
+                .map(|(server_name, entry)| (server_name.clone(), entry.clone()))
+                .collect::<Vec<_>>()
+        };
         let mut stale = Vec::new();
 
-        {
-            let guard = self.pooled.read().await;
-            for (server_name, entry) in guard.iter() {
-                let last_used = *entry.last_used.lock().await;
-                if now.duration_since(last_used) >= idle_ttl {
-                    stale.push(server_name.clone());
-                }
+        for (server_name, entry) in candidates {
+            let last_used = *entry.last_used.lock().await;
+            if now.duration_since(last_used) >= idle_ttl {
+                stale.push(server_name);
             }
         }
 
@@ -404,16 +408,26 @@ impl ProcessManager {
             }
         }
 
-        let mut guard = self.pooled.write().await;
+        let guard = self.pooled.write().await;
         if let Some(entry) = guard.get(&server.name) {
             if entry.signature == signature {
                 return Ok(entry.clone());
             }
         }
 
-        let conn = ProcessConnection::spawn(server).await?;
-        let new_entry = Arc::new(PooledEntry::new(signature, conn));
+        // Do not await process spawn while holding pooled write lock.
+        drop(guard);
+        let mut conn = ProcessConnection::spawn(server).await?;
 
+        let mut guard = self.pooled.write().await;
+        if let Some(entry) = guard.get(&server.name) {
+            if entry.signature == signature {
+                let _ = conn.shutdown().await;
+                return Ok(entry.clone());
+            }
+        }
+
+        let new_entry = Arc::new(PooledEntry::new(signature, conn));
         if let Some(old_entry) = guard.insert(server.name.clone(), new_entry.clone()) {
             tokio::spawn(async move {
                 old_entry.shutdown().await;

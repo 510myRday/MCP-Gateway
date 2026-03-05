@@ -997,12 +997,20 @@ html, body {
 .bottom-bar {
   display: flex;
   align-items: center;
-  gap: 8px;
+  justify-content: space-between;
+  gap: 10px;
   padding: 8px 20px;
   background: var(--bg-secondary);
   border-top: 1px solid var(--border-color);
   font-size: 12px;
   color: var(--text-muted);
+}
+.bottom-bar-main {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  flex: 1;
 }
 .bottom-bar-label {
   color: var(--text-secondary);
@@ -1014,7 +1022,40 @@ html, body {
   background: var(--bg-tertiary);
   padding: 2px 6px;
   border-radius: var(--radius-sm);
-  word-break: break-all;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.bottom-bar-links {
+  margin-left: auto;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+.bottom-link-btn {
+  width: 28px;
+  height: 28px;
+  min-width: 28px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+  border: none;
+  background: transparent;
+  color: var(--text-muted);
+  cursor: pointer;
+  border-radius: 999px;
+  transition: color 0.15s ease, transform 0.15s ease, background-color 0.15s ease;
+}
+.bottom-link-btn:hover {
+  color: var(--text-primary);
+}
+.bottom-link-btn:focus-visible {
+  outline: 1px solid var(--accent-blue);
+  outline-offset: 2px;
+}
+.bottom-link-btn:active {
+  transform: translateY(1px);
 }
 
 /* ── Server 行：容器 ── */
@@ -1184,6 +1225,14 @@ html, body {
   .skills-dir-status { display: none; }
   .skills-action-select { width: 100%; }
   .server-test-chip { display: none; }
+
+  .bottom-bar {
+    padding-left: 12px;
+    padding-right: 12px;
+  }
+  .bottom-bar-path {
+    max-width: 48vw;
+  }
 }
 
 /* ── 模态框/确认弹窗 ── */

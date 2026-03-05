@@ -1,5 +1,21 @@
 import { useState, useEffect, useCallback, useMemo, useRef } from "react";
-import { Play, Square, Copy, Check, Code2, List, Languages, Save, FolderOpen, Eye, EyeOff } from "lucide-react";
+import {
+  Play,
+  Square,
+  Copy,
+  Check,
+  Code2,
+  List,
+  Languages,
+  Save,
+  FolderOpen,
+  Eye,
+  EyeOff,
+  Globe,
+  Github,
+  Send,
+} from "lucide-react";
+import { open } from "@tauri-apps/plugin-shell";
 import { getGatewayStatus, startGateway, stopGateway, type GatewayProcessStatus } from "./gatewayRuntime";
 import {
   loadLocalConfig,
@@ -12,7 +28,7 @@ import {
   focusMainWindowForSkillConfirmation,
 } from "./localConfig";
 import { ApiClient } from "./api";
-import { usePolling } from "./hooks/usePolling";
+import { usePolling, type PollOutcome } from "./hooks/usePolling";
 import type {
   GatewayConfig,
   ServerConfig,
@@ -216,6 +232,32 @@ interface EditableConfigSnapshot {
 }
 
 type EndpointTransportType = "sse" | "streamable-http";
+
+const BLOG_URL = "https://blog.aiguicai.com";
+const GITHUB_URL = "https://github.com/510myRday/MCP-Gateway";
+const TG_GROUP_URL = "https://t.me/+vq8WByYtPoQ1MjA1";
+const QQ_GROUP_NUMBER = "1090461840";
+// 最稳方式：填入群分享得到的官方邀请链接（含 k / idkey 等参数）
+// 例如：https://qm.qq.com/cgi-bin/qm/qr?k=xxxx 或 https://shang.qq.com/wpa/qunwpa?idkey=xxxx
+const QQ_GROUP_INVITE_URL = "https://qm.qq.com/q/rsa3XRgFe8";
+const QQ_GROUP_PROTOCOL_LINKS = [
+  `tencent://GroupProfile?groupid=${QQ_GROUP_NUMBER}`,
+  `mqqapi://card/show_pslcard?src_type=internal&version=1&uin=${QQ_GROUP_NUMBER}&card_type=group&source=qrcode`,
+] as const;
+
+function QqLogoIcon({ size = 14 }: { size?: number }) {
+  return (
+    <svg
+      width={size}
+      height={size}
+      viewBox="0 0 448 512"
+      fill="currentColor"
+      aria-hidden="true"
+    >
+      <path d="M433.754 420.445c-11.526 1.393-44.86-52.741-44.86-52.741 0 31.345-16.136 72.247-51.051 101.786 16.842 5.192 54.843 19.167 45.803 34.421-7.316 12.343-125.51 7.881-159.632 4.037-34.122 3.844-152.316 8.306-159.632-4.037-9.045-15.25 28.918-29.214 45.783-34.415-34.92-29.539-51.059-70.445-51.059-101.792 0 0-33.334 54.134-44.859 52.741-5.37-.65-12.424-29.644 9.347-99.704 10.261-33.024 21.995-60.478 40.144-105.779C60.683 98.063 108.982.006 224 0c113.737.006 163.156 96.133 160.264 214.963 18.118 45.223 29.912 72.85 40.144 105.778 21.768 70.06 14.716 99.053 9.346 99.704z" />
+    </svg>
+  );
+}
 
 function stableSortValue(value: unknown): unknown {
   if (Array.isArray(value)) {
@@ -789,6 +831,10 @@ function App() {
   const knownPendingIdsRef = useRef<Set<string>>(new Set());
   const dismissedPopupIdsRef = useRef<Set<string>>(new Set());
   const pendingFetchSeqRef = useRef(0);
+  const apiClient = useMemo(
+    () => new ApiClient(listen, adminToken, apiPrefix),
+    [adminToken, apiPrefix, listen],
+  );
 
   const syncSkillRootsToConfig = useCallback((nextItems: SkillDirectoryItem[]) => {
     const normalizedEntries = nextItems
@@ -944,32 +990,50 @@ function App() {
     getConfigPath().then(setConfigPath).catch(() => {});
   }, [runItemValidation]);
 
+  const parsedJsonServers = useMemo(() => {
+    if (serversMode !== "json") {
+      return null;
+    }
+    try {
+      return jsonToServers(JSON.parse(jsonText) as Record<string, unknown>);
+    } catch {
+      return null;
+    }
+  }, [jsonText, serversMode]);
+
   const switchToJson = () => {
     setJsonText(JSON.stringify(serversToJson(servers), null, 2));
     setJsonError(null);
     setServersMode("json");
   };
   const switchToVisual = () => {
-    try {
-      const parsed = JSON.parse(jsonText) as Record<string, unknown>;
-      setServers(jsonToServers(parsed));
-      setServerTestStates({});
-      setJsonError(null);
-      setServersMode("visual");
-    } catch {
+    if (!parsedJsonServers) {
       setJsonError(t("jsonParseError"));
+      return;
     }
+    setServers(parsedJsonServers);
+    setServerTestStates({});
+    setJsonError(null);
+    setServersMode("visual");
   };
 
   // ── 进程状态轮询 ──
-  const refreshStatus = useCallback(async () => {
-    try { setStatus(await getGatewayStatus()); } catch { /* ignore */ }
+  const refreshStatus = useCallback(async (): Promise<PollOutcome> => {
+    try {
+      const current = await getGatewayStatus();
+      setStatus(current);
+      return current.running ? "active" : "idle";
+    } catch {
+      return "error";
+    }
   }, []);
-  useEffect(() => {
-    void refreshStatus();
-    const id = setInterval(() => { void refreshStatus(); }, 3000);
-    return () => clearInterval(id);
-  }, [refreshStatus]);
+  usePolling(refreshStatus, {
+    enabled: true,
+    activeMs: 3000,
+    idleMs: 10000,
+    errorMs: 5000,
+    immediate: true,
+  });
 
   const running = !!status?.running;
 
@@ -1033,22 +1097,21 @@ function App() {
     }
   }, [runServerConnectivityTest]);
 
-  const fetchSkillPending = useCallback(async () => {
+  const fetchSkillPending = useCallback(async (): Promise<PollOutcome> => {
     const fetchSeq = pendingFetchSeqRef.current + 1;
     pendingFetchSeqRef.current = fetchSeq;
 
     if (!running || !skills.enabled) {
-      if (fetchSeq !== pendingFetchSeqRef.current) return;
+      if (fetchSeq !== pendingFetchSeqRef.current) return "idle";
       setSkillPending([]);
       setActiveSkillPopupId(null);
       knownPendingIdsRef.current = new Set();
       dismissedPopupIdsRef.current = new Set();
-      return;
+      return "idle";
     }
     try {
-      const client = new ApiClient(listen, adminToken, apiPrefix);
-      const pending = await client.listSkillConfirmations();
-      if (fetchSeq !== pendingFetchSeqRef.current) return;
+      const pending = await apiClient.listSkillConfirmations();
+      if (fetchSeq !== pendingFetchSeqRef.current) return "idle";
       const nextIds = new Set(pending.map((item) => item.id));
       const knownIds = knownPendingIdsRef.current;
       const newItems = pending.filter((item) => !knownIds.has(item.id));
@@ -1071,13 +1134,21 @@ function App() {
         return fallback ? fallback.id : null;
       });
       knownPendingIdsRef.current = nextIds;
+      return pending.length > 0 ? "active" : "idle";
     } catch (error) {
-      if (fetchSeq !== pendingFetchSeqRef.current) return;
+      if (fetchSeq !== pendingFetchSeqRef.current) return "idle";
       setError(String(error));
+      return "error";
     }
-  }, [adminToken, apiPrefix, listen, running, skills.enabled]);
+  }, [apiClient, running, skills.enabled]);
 
-  usePolling(fetchSkillPending, 3000, running && skills.enabled);
+  usePolling(fetchSkillPending, {
+    enabled: running && skills.enabled,
+    activeMs: 3000,
+    idleMs: 10000,
+    errorMs: 5000,
+    immediate: true,
+  });
 
   const updateConfirmation = useCallback(async (id: string, action: "approve" | "reject") => {
     setSkillActionBusy((prev) => {
@@ -1087,11 +1158,10 @@ function App() {
     });
     let success = false;
     try {
-      const client = new ApiClient(listen, adminToken, apiPrefix);
       if (action === "approve") {
-        await client.approveSkillConfirmation(id);
+        await apiClient.approveSkillConfirmation(id);
       } else {
-        await client.rejectSkillConfirmation(id);
+        await apiClient.rejectSkillConfirmation(id);
       }
       await fetchSkillPending();
       success = true;
@@ -1110,7 +1180,7 @@ function App() {
       });
     }
     return success;
-  }, [adminToken, apiPrefix, fetchSkillPending, listen]);
+  }, [apiClient, fetchSkillPending]);
 
   const handleSkillConfirmationAction = useCallback((id: string, action: "approve" | "reject") => {
     void (async () => {
@@ -1251,12 +1321,11 @@ function App() {
   const resolveServers = (): ServerConfig[] | null => {
     let list: ServerConfig[];
     if (serversMode === "json") {
-      try {
-        list = jsonToServers(JSON.parse(jsonText) as Record<string, unknown>);
-      } catch {
+      if (!parsedJsonServers) {
         setJsonError(t("jsonParseErrorStart"));
         return null;
       }
+      list = parsedJsonServers;
     } else {
       list = servers;
     }
@@ -1269,17 +1338,13 @@ function App() {
   };
 
   const currentConfigFingerprint = useMemo(() => {
-    let compareServers = servers;
-    if (serversMode === "json") {
-      try {
-        compareServers = jsonToServers(JSON.parse(jsonText) as Record<string, unknown>);
-      } catch {
-        return null;
-      }
+    if (serversMode === "json" && !parsedJsonServers) {
+      return null;
     }
+    const compareServers = serversMode === "json" ? parsedJsonServers : servers;
 
     return createEditableConfigFingerprint(createEditableConfigSnapshot({
-      servers: compareServers,
+      servers: compareServers ?? servers,
       listen,
       apiPrefix,
       ssePath,
@@ -1288,7 +1353,7 @@ function App() {
       mcpToken,
       skills: ensureSkillsConfig(skills, defaultSkillRules),
     }));
-  }, [servers, serversMode, jsonText, listen, apiPrefix, ssePath, httpPath, adminToken, mcpToken, skills, defaultSkillRules]);
+  }, [servers, serversMode, parsedJsonServers, listen, apiPrefix, ssePath, httpPath, adminToken, mcpToken, skills, defaultSkillRules]);
 
   const isConfigDirty = configLoaded
     && (currentConfigFingerprint === null || currentConfigFingerprint !== savedConfigFingerprint);
@@ -1388,6 +1453,36 @@ function App() {
     setCopied(key);
     setTimeout(() => setCopied(null), 2000);
   };
+
+  const handleOpenExternalLink = useCallback(async (url: string) => {
+    try {
+      await open(url);
+    } catch (error) {
+      setError(String(error));
+    }
+  }, []);
+
+  const handleOpenQqGroup = useCallback(async () => {
+    const inviteUrl = QQ_GROUP_INVITE_URL.trim();
+    if (inviteUrl.length > 0) {
+      try {
+        await open(inviteUrl);
+      } catch (error) {
+        setError(String(error));
+      }
+      return;
+    }
+
+    for (const link of QQ_GROUP_PROTOCOL_LINKS) {
+      try {
+        await open(link);
+        return;
+      } catch {
+        // keep trying next known protocol.
+      }
+    }
+    setError(t("qqGroupFallbackHint").replace("{group}", QQ_GROUP_NUMBER));
+  }, [t]);
 
   return (
     <div className="app-root">
@@ -1816,14 +1911,56 @@ function App() {
 
       </div>
 
-      {/* ── 底部通知条：配置文件位置 ── */}
-      {configPath && (
-        <div className="bottom-bar">
-          <FolderOpen size={14} />
-          <span className="bottom-bar-label">{t("configPath")}:</span>
-          <code className="bottom-bar-path">{configPath}</code>
+      {/* ── 底部通知条：配置文件位置 + 快捷入口 ── */}
+      <div className="bottom-bar">
+        <div className="bottom-bar-main">
+          {configPath && (
+            <>
+              <FolderOpen size={14} />
+              <span className="bottom-bar-label">{t("configPath")}:</span>
+              <code className="bottom-bar-path">{configPath}</code>
+            </>
+          )}
         </div>
-      )}
+        <div className="bottom-bar-links" role="group" aria-label={t("quickLinks")}>
+          <button
+            type="button"
+            className="bottom-link-btn"
+            aria-label={t("openBlog")}
+            title={t("openBlog")}
+            onClick={() => { void handleOpenExternalLink(BLOG_URL); }}
+          >
+            <Globe size={15} />
+          </button>
+          <button
+            type="button"
+            className="bottom-link-btn"
+            aria-label={t("openGithub")}
+            title={t("openGithub")}
+            onClick={() => { void handleOpenExternalLink(GITHUB_URL); }}
+          >
+            <Github size={15} />
+          </button>
+          <button
+            type="button"
+            className="bottom-link-btn"
+            aria-label={t("openQqGroup")}
+            title={t("openQqGroup")}
+            onClick={() => { void handleOpenQqGroup(); }}
+          >
+            <QqLogoIcon size={14} />
+          </button>
+          <button
+            type="button"
+            className="bottom-link-btn"
+            aria-label={t("openTelegramGroup")}
+            title={t("openTelegramGroup")}
+            onClick={() => { void handleOpenExternalLink(TG_GROUP_URL); }}
+          >
+            <Send size={14} />
+          </button>
+        </div>
+      </div>
 
       <SkillConfirmationPopup
         open={!!activeSkillPopupItem}

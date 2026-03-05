@@ -24,6 +24,11 @@
       "csp": null
     }
   },
+  "plugins": {
+    "shell": {
+      "open": "((mailto:\\w+)|(tel:\\w+)|(https?://\\w+)|(mqqapi://\\w+)|(tencent://\\w+)).+"
+    }
+  },
   "bundle": {
     "active": true,
     "targets": "all",

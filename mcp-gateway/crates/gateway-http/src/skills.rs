@@ -10,6 +10,7 @@ use gateway_core::{
 };
 use serde::Deserialize;
 use serde_json::{json, Value};
+use tokio::io::{AsyncRead, AsyncReadExt};
 use tokio::process::Command;
 use tokio::sync::{Notify, RwLock};
 use utoipa::ToSchema;
@@ -30,6 +31,7 @@ fn configure_skill_command(_command: &mut Command) {}
 #[derive(Clone, Default)]
 pub struct SkillsService {
     confirmations: Arc<RwLock<HashMap<String, ConfirmationEntry>>>,
+    discovery_cache: Arc<RwLock<Option<SkillDiscoveryCache>>>,
 }
 
 #[derive(Debug, Clone)]
@@ -39,6 +41,13 @@ struct ConfirmationEntry {
     record: SkillConfirmation,
     notify: Arc<Notify>,
     timed_out: bool,
+}
+
+#[derive(Debug, Clone)]
+struct SkillDiscoveryCache {
+    signature: String,
+    discovered: Vec<DiscoveredSkill>,
+    expires_at: Instant,
 }
 
 #[derive(Debug, Clone, serde::Serialize, ToSchema)]
@@ -145,10 +154,24 @@ struct ParsedFrontmatter {
     block: String,
 }
 
+#[derive(Debug)]
+struct StreamCapturedOutput {
+    text: String,
+    truncated: bool,
+}
+
+#[derive(Debug)]
+struct SkillCommandExecution {
+    status: std::process::ExitStatus,
+    stdout: StreamCapturedOutput,
+    stderr: StreamCapturedOutput,
+}
+
 impl SkillsService {
     const CONFIRMATION_DECISION_TIMEOUT: Duration = Duration::from_secs(60);
     const CONFIRMATION_STALE_PENDING_WINDOW: Duration = Duration::from_secs(75);
     const CONFIRMATION_RESOLVED_RETENTION_WINDOW: Duration = Duration::from_secs(120);
+    const SKILL_DISCOVERY_CACHE_TTL: Duration = Duration::from_secs(3);
 
     pub fn new() -> Self {
         Self::default()
@@ -461,26 +484,20 @@ impl SkillsService {
             .stdout(std::process::Stdio::piped())
             .stderr(std::process::Stdio::piped());
         configure_skill_command(&mut command);
-        let output = tokio::time::timeout(
-            std::time::Duration::from_millis(timeout_ms),
-            command.output(),
-        )
-        .await
-        .map_err(|_| AppError::Upstream(format!("command timed out after {timeout_ms}ms")))?
-        .map_err(|error| AppError::Upstream(format!("failed to execute command: {error}")))?;
 
-        let duration_ms = started.elapsed().as_millis() as u64;
         let disable_truncation = should_disable_output_truncation(&program, &command_args);
-        let (stdout, stdout_truncated) = if disable_truncation {
-            (String::from_utf8_lossy(&output.stdout).to_string(), false)
-        } else {
-            truncate_output(&output.stdout, max_output_bytes)
-        };
-        let (stderr, stderr_truncated) = if disable_truncation {
-            (String::from_utf8_lossy(&output.stderr).to_string(), false)
-        } else {
-            truncate_output(&output.stderr, max_output_bytes)
-        };
+        let output = execute_skill_command(
+            &mut command,
+            timeout_ms,
+            max_output_bytes,
+            disable_truncation,
+        )
+        .await?;
+        let duration_ms = started.elapsed().as_millis() as u64;
+        let stdout = output.stdout.text;
+        let stderr = output.stderr.text;
+        let stdout_truncated = output.stdout.truncated;
+        let stderr_truncated = output.stderr.truncated;
         let exit_code = output.status.code().unwrap_or(-1);
 
         let mut structured = serde_json::Map::new();
@@ -719,9 +736,33 @@ impl SkillsService {
         skills_config: &SkillsConfig,
     ) -> Result<Vec<DiscoveredSkill>, AppError> {
         let roots = skills_config.roots.clone();
-        tokio::task::spawn_blocking(move || discover_skills_sync(&roots))
+        let signature = roots_signature(&roots);
+
+        {
+            let now = Instant::now();
+            let guard = self.discovery_cache.read().await;
+            if let Some(cached) = guard.as_ref() {
+                if cached.signature == signature && now <= cached.expires_at {
+                    return Ok(cached.discovered.clone());
+                }
+            }
+        }
+
+        let roots_for_scan = roots.clone();
+        let discovered = tokio::task::spawn_blocking(move || discover_skills_sync(&roots_for_scan))
             .await
-            .map_err(|error| AppError::Internal(format!("skills discovery join error: {error}")))?
+            .map_err(|error| AppError::Internal(format!("skills discovery join error: {error}")))??;
+
+        {
+            let mut guard = self.discovery_cache.write().await;
+            *guard = Some(SkillDiscoveryCache {
+                signature,
+                discovered: discovered.clone(),
+                expires_at: Instant::now() + Self::SKILL_DISCOVERY_CACHE_TTL,
+            });
+        }
+
+        Ok(discovered)
     }
 }
 
@@ -1169,6 +1210,124 @@ fn shell_command_for_current_os(cmd: &str) -> (String, Vec<String>) {
     }
 }
 
+fn roots_signature(roots: &[String]) -> String {
+    let mut normalized = roots
+        .iter()
+        .map(|root| root.trim())
+        .filter(|root| !root.is_empty())
+        .map(|root| normalize_lexical_path(Path::new(root)).to_string_lossy().to_string())
+        .collect::<Vec<_>>();
+    normalized.sort_by_key(|item| item.to_ascii_lowercase());
+    normalized.dedup_by(|left, right| left.eq_ignore_ascii_case(right));
+    normalized.join("\u{001f}")
+}
+
+async fn execute_skill_command(
+    command: &mut Command,
+    timeout_ms: u64,
+    max_output_bytes: usize,
+    disable_truncation: bool,
+) -> Result<SkillCommandExecution, AppError> {
+    let mut child = command
+        .spawn()
+        .map_err(|error| AppError::Upstream(format!("failed to execute command: {error}")))?;
+    let stdout = child
+        .stdout
+        .take()
+        .ok_or_else(|| AppError::Internal("missing stdout from skill command".to_string()))?;
+    let stderr = child
+        .stderr
+        .take()
+        .ok_or_else(|| AppError::Internal("missing stderr from skill command".to_string()))?;
+
+    let stdout_task = tokio::spawn(capture_stream_output(
+        stdout,
+        max_output_bytes,
+        disable_truncation,
+    ));
+    let stderr_task = tokio::spawn(capture_stream_output(
+        stderr,
+        max_output_bytes,
+        disable_truncation,
+    ));
+
+    let status = match tokio::time::timeout(Duration::from_millis(timeout_ms), child.wait()).await {
+        Ok(wait_result) => {
+            wait_result.map_err(|error| AppError::Upstream(format!("failed to execute command: {error}")))?
+        }
+        Err(_) => {
+            let _ = child.start_kill();
+            let _ = child.wait().await;
+            let _ = stdout_task.await;
+            let _ = stderr_task.await;
+            return Err(AppError::Upstream(format!(
+                "command timed out after {timeout_ms}ms"
+            )));
+        }
+    };
+
+    let stdout = stdout_task
+        .await
+        .map_err(|error| AppError::Internal(format!("stdout capture join error: {error}")))??;
+    let stderr = stderr_task
+        .await
+        .map_err(|error| AppError::Internal(format!("stderr capture join error: {error}")))??;
+
+    Ok(SkillCommandExecution {
+        status,
+        stdout,
+        stderr,
+    })
+}
+
+async fn capture_stream_output<R>(
+    mut reader: R,
+    max_output_bytes: usize,
+    disable_truncation: bool,
+) -> Result<StreamCapturedOutput, AppError>
+where
+    R: AsyncRead + Unpin + Send + 'static,
+{
+    let mut chunk = [0_u8; 8192];
+    let mut captured = if disable_truncation {
+        Vec::with_capacity(8192)
+    } else {
+        Vec::with_capacity(max_output_bytes.min(8192))
+    };
+    let mut truncated = false;
+
+    loop {
+        let read = reader
+            .read(&mut chunk)
+            .await
+            .map_err(|error| AppError::Upstream(format!("failed to read command output: {error}")))?;
+        if read == 0 {
+            break;
+        }
+
+        if disable_truncation {
+            captured.extend_from_slice(&chunk[..read]);
+            continue;
+        }
+
+        if captured.len() < max_output_bytes {
+            let available = max_output_bytes - captured.len();
+            let take = available.min(read);
+            captured.extend_from_slice(&chunk[..take]);
+            if take < read {
+                truncated = true;
+            }
+        } else {
+            truncated = true;
+        }
+    }
+
+    Ok(StreamCapturedOutput {
+        text: String::from_utf8_lossy(&captured).to_string(),
+        truncated,
+    })
+}
+
 fn evaluate_policy(
     skills: &SkillsConfig,
     program: &str,
@@ -1591,16 +1750,6 @@ fn is_path_like(token: &str) -> bool {
     }
     let bytes = token.as_bytes();
     bytes.len() >= 3 && bytes[1] == b':' && (bytes[2] == b'\\' || bytes[2] == b'/')
-}
-
-fn truncate_output(bytes: &[u8], max_bytes: usize) -> (String, bool) {
-    let truncated = bytes.len() > max_bytes;
-    let slice = if truncated {
-        &bytes[..max_bytes]
-    } else {
-        bytes
-    };
-    (String::from_utf8_lossy(slice).to_string(), truncated)
 }
 
 fn should_disable_output_truncation(program: &str, command_args: &[String]) -> bool {

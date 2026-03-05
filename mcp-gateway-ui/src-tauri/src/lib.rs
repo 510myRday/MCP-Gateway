@@ -148,7 +148,10 @@ async fn start_embedded_gateway(config_path: PathBuf) -> Result<ManagedGateway, 
         .map_err(|error| format!("加载配置任务失败：{error}"))?
         .map_err(|error| format!("加载配置失败：{error}"))?;
 
-    ensure_listen_port_available(&cfg.listen)?;
+    let listen_for_check = cfg.listen.clone();
+    tokio::task::spawn_blocking(move || ensure_listen_port_available(&listen_for_check))
+        .await
+        .map_err(|error| format!("端口检测任务失败：{error}"))??;
 
     let config_service = ConfigService::from_path(config_path.clone())
         .await
@@ -472,12 +475,14 @@ async fn test_mcp_server_local(server: ServerConfig) -> Result<Value, String> {
         return Err("命令不能为空，无法执行检测".to_string());
     }
 
-    let defaults = match resolve_default_config_path() {
+    let defaults = tokio::task::spawn_blocking(|| match resolve_default_config_path() {
         Ok(path) if path.exists() => load_config_from_path(&path)
             .map(|cfg| cfg.defaults)
             .unwrap_or_else(|_| GatewayConfig::default().defaults),
         _ => GatewayConfig::default().defaults,
-    };
+    })
+    .await
+    .map_err(|error| format!("读取默认配置任务失败：{error}"))?;
 
     ProcessManager::new()
         .test_server(&server, &defaults)

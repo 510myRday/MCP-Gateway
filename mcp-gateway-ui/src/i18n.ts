@@ -147,6 +147,12 @@ const translations = {
 
     // 底部通知条
     configPath: "配置文件位置",
+    quickLinks: "快捷入口",
+    openBlog: "博客地址",
+    openGithub: "GitHub 地址",
+    openQqGroup: "加入 QQ 群",
+    openTelegramGroup: "加入 TG 群",
+    qqGroupFallbackHint: "当前 QQ 客户端不支持该协议或未配置邀请链接。请在 QQ 里搜索群号 {group}，或提供群邀请链接（k/idkey）以实现一键加群。",
 
     // 语言切换
     langToggle: "English",
@@ -296,6 +302,12 @@ const translations = {
 
     // Bottom notification bar
     configPath: "Config file location",
+    quickLinks: "Quick links",
+    openBlog: "blog address",
+    openGithub: "GitHub address",
+    openQqGroup: "QQ group address",
+    openTelegramGroup: "Telegram group address",
+    qqGroupFallbackHint: "Current QQ client does not support this protocol, or invite link is not configured. Search group {group} in QQ, or provide an invite link (k/idkey) for one-click join.",
 
     // Language toggle
     langToggle: "中文",
