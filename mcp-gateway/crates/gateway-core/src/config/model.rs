@@ -45,11 +45,16 @@ pub enum LifecycleMode {
 #[serde(rename_all = "snake_case")]
 pub enum StdioProtocol {
     #[default]
+    #[serde(
+        alias = "content_length",
+        alias = "contentLength",
+        alias = "content-length",
+        alias = "jsonl",
+        alias = "json_lines",
+        alias = "jsonLines",
+        alias = "json-lines"
+    )]
     Auto,
-    #[serde(alias = "contentLength", alias = "content-length")]
-    ContentLength,
-    #[serde(alias = "jsonl", alias = "jsonLines", alias = "json-lines")]
-    JsonLines,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
@@ -1441,5 +1446,16 @@ mod tests {
         check("deny-set-content");
         check("deny-sed");
         check("deny-vim");
+    }
+
+    #[test]
+    fn legacy_stdio_protocol_values_fold_into_auto() {
+        let content_length: StdioProtocol =
+            serde_json::from_str(r#""content_length""#).expect("parse content_length");
+        let json_lines: StdioProtocol =
+            serde_json::from_str(r#""json_lines""#).expect("parse json_lines");
+
+        assert_eq!(content_length, StdioProtocol::Auto);
+        assert_eq!(json_lines, StdioProtocol::Auto);
     }
 }

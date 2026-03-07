@@ -51,6 +51,10 @@ function strToArgs(raw: string): string[] {
   return raw.match(/(?:[^\s"]+|"[^"]*")+/g)?.map((a) => a.replace(/^"|"$/g, "")) ?? [];
 }
 
+function sameArgs(left: string[], right: string[]): boolean {
+  return left.length === right.length && left.every((value, index) => value === right[index]);
+}
+
 // ── servers → claude_desktop_config 格式的 JSON 对象 ─────────────
 function serversToJson(servers: ServerConfig[]): Record<string, unknown> {
   const obj: Record<string, unknown> = {};
@@ -319,12 +323,13 @@ function createMcpClientEntryJson(name: string, type: EndpointTransportType, url
 
 type SkillDirStatus = "idle" | "checking" | "valid" | "invalid" | "error";
 type SkillDirKind = "roots" | "whitelist";
-type ServerTestStatus = "idle" | "testing" | "success" | "failed";
+type ServerTestStatus = "idle" | "testing" | "success" | "failed" | "auth_required";
 
 interface ServerTestState {
   status: ServerTestStatus;
   message: string;
   testedAt?: string;
+  authUrl?: string;
 }
 
 function serverTestKey(index: number, server?: Pick<ServerConfig, "name">): string {
@@ -615,6 +620,8 @@ function ServerRow({
     ? t("serverTestTesting")
     : testState.status === "success"
       ? t("serverTestSuccess")
+      : testState.status === "auth_required"
+        ? t("serverTestAuthRequired")
       : testState.status === "failed"
         ? t("serverTestFailed")
         : t("serverTestIdle");
@@ -625,9 +632,33 @@ function ServerRow({
   // 环境变量数组形式（方便渲染）
   const envEntries = Object.entries(server.env);
   const [visibleEnvValues, setVisibleEnvValues] = useState<Record<string, boolean>>({});
+  // 保留编辑中的原始文本，避免每次按键都把空格/引号格式化掉。
+  const [argsDraft, setArgsDraft] = useState(() => argsToStr(server.args));
+  const [isEditingArgs, setIsEditingArgs] = useState(false);
+
+  useEffect(() => {
+    if (!isEditingArgs) {
+      setArgsDraft(argsToStr(server.args));
+    }
+  }, [isEditingArgs, server.args]);
 
   const toggleEnvValueVisibility = (rowId: string) => {
     setVisibleEnvValues((prev) => ({ ...prev, [rowId]: !prev[rowId] }));
+  };
+
+  const updateArgsDraft = (nextDraft: string) => {
+    setIsEditingArgs(true);
+    setArgsDraft(nextDraft);
+    onChange({ ...server, args: strToArgs(nextDraft) });
+  };
+
+  const commitArgsDraft = () => {
+    const parsedArgs = strToArgs(argsDraft);
+    setIsEditingArgs(false);
+    setArgsDraft(argsToStr(parsedArgs));
+    if (!sameArgs(server.args, parsedArgs)) {
+      onChange({ ...server, args: parsedArgs });
+    }
   };
 
   // 添加新的环境变量 KV 对
@@ -682,8 +713,15 @@ function ServerRow({
             value={server.command}
             onChange={(e) => onChange({ ...server, command: e.target.value })} />
           <input className="form-input" placeholder="-y @modelcontextprotocol/server-filesystem /path"
-            value={argsToStr(server.args)}
-            onChange={(e) => onChange({ ...server, args: strToArgs(e.target.value) })} />
+            value={argsDraft}
+            onFocus={() => setIsEditingArgs(true)}
+            onChange={(e) => updateArgsDraft(e.target.value)}
+            onBlur={commitArgsDraft}
+            onKeyDown={(e) => {
+              if (e.key === "Enter") {
+                e.currentTarget.blur();
+              }
+            }} />
         </div>
         <span className={`server-test-chip ${testState.status}`} title={statusTitle}>{statusText}</span>
         <button
@@ -1060,14 +1098,24 @@ function App() {
 
     try {
       const result: ServerConnectivityTestResult = await testMcpServerLocal(server);
+      const nextStatus: ServerTestStatus = result.ok
+        ? "success"
+        : result.status === "auth_required"
+          ? "auth_required"
+          : "failed";
+      const authUrl = typeof result.authUrl === "string" && result.authUrl ? result.authUrl : undefined;
       setServerTestStates((prev) => ({
         ...prev,
         [key]: {
-          status: result.ok ? "success" : "failed",
-          message: "",
+          status: nextStatus,
+          message: typeof result.message === "string" ? result.message : "",
           testedAt: typeof result.testedAt === "string" ? result.testedAt : new Date().toISOString(),
+          authUrl,
         },
       }));
+      if (nextStatus === "auth_required" && authUrl) {
+        void open(authUrl).catch(() => {});
+      }
     } catch (error) {
       setServerTestStates((prev) => ({
         ...prev,

@@ -1,23 +1,24 @@
 use tokio::io::{AsyncBufReadExt, AsyncReadExt, AsyncWriteExt, BufReader};
 use tokio::process::{ChildStdin, ChildStdout};
 
-use crate::config::StdioProtocol;
 use crate::error::AppError;
+
+use super::protocol_negotiation::NegotiatedStdioProtocol;
 
 pub async fn write_message(
     stdin: &mut ChildStdin,
     message: &serde_json::Value,
-    protocol: &StdioProtocol,
+    protocol: NegotiatedStdioProtocol,
 ) -> Result<(), AppError> {
     let body = serde_json::to_vec(message)?;
     match protocol {
-        StdioProtocol::Auto | StdioProtocol::ContentLength => {
+        NegotiatedStdioProtocol::ContentLength => {
             let header = format!("Content-Length: {}\r\n\r\n", body.len());
             stdin.write_all(header.as_bytes()).await?;
             stdin.write_all(&body).await?;
             stdin.flush().await?;
         }
-        StdioProtocol::JsonLines => {
+        NegotiatedStdioProtocol::JsonLines => {
             stdin.write_all(&body).await?;
             stdin.write_all(b"\n").await?;
             stdin.flush().await?;
@@ -28,13 +29,11 @@ pub async fn write_message(
 
 pub async fn read_message(
     stdout: &mut BufReader<ChildStdout>,
-    protocol: &StdioProtocol,
+    protocol: NegotiatedStdioProtocol,
 ) -> Result<serde_json::Value, AppError> {
     match protocol {
-        StdioProtocol::Auto | StdioProtocol::ContentLength => {
-            read_message_content_length(stdout).await
-        }
-        StdioProtocol::JsonLines => read_message_json_lines(stdout).await,
+        NegotiatedStdioProtocol::ContentLength => read_message_content_length(stdout).await,
+        NegotiatedStdioProtocol::JsonLines => read_message_json_lines(stdout).await,
     }
 }
 

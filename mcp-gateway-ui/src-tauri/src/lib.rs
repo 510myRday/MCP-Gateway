@@ -15,7 +15,7 @@ use gateway_core::{
 };
 use gateway_http::{build_router, spawn_idle_reaper, AppState, SkillsService, SseHub};
 use serde::Serialize;
-use serde_json::Value;
+use serde_json::{json, Value};
 use tauri::{Manager, State};
 use tokio::sync::oneshot;
 use tokio::task::JoinHandle;
@@ -484,10 +484,43 @@ async fn test_mcp_server_local(server: ServerConfig) -> Result<Value, String> {
     .await
     .map_err(|error| format!("读取默认配置任务失败：{error}"))?;
 
-    ProcessManager::new()
-        .test_server(&server, &defaults)
-        .await
-        .map_err(|error| format!("MCP 连通性检测失败：{error}"))
+    match ProcessManager::new().test_server(&server, &defaults).await {
+        Ok(value) => Ok(value),
+        Err(error) => {
+            if let Some(value) = auth_required_test_result(&error.to_string()) {
+                Ok(value)
+            } else {
+                Err(format!("MCP 连通性检测失败：{error}"))
+            }
+        }
+    }
+}
+
+fn auth_required_test_result(message: &str) -> Option<Value> {
+    let auth_url = extract_auth_field(message, "authorize_url=")?;
+    let browser_opened = extract_auth_field(message, "browser_opened=")
+        .map(|value| value == "true")
+        .unwrap_or(false);
+    let waiting_for_authorization = extract_auth_field(message, "waiting_for_authorization=")
+        .map(|value| value == "true")
+        .unwrap_or(true);
+
+    Some(json!({
+        "ok": false,
+        "status": "auth_required",
+        "message": "需要浏览器登录后再继续检测",
+        "authUrl": auth_url,
+        "browserOpened": browser_opened,
+        "waitingForAuthorization": waiting_for_authorization,
+        "testedAt": Utc::now(),
+    }))
+}
+
+fn extract_auth_field(message: &str, key: &str) -> Option<String> {
+    let start = message.find(key)? + key.len();
+    let rest = &message[start..];
+    let end = rest.find(';').unwrap_or(rest.len());
+    Some(rest[..end].trim().to_string())
 }
 
 fn upgrade_legacy_skill_rules_in_place(config: &mut Value) -> bool {

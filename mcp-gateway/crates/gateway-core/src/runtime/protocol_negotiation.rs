@@ -1,32 +1,25 @@
 use serde_json::Value;
 
-use crate::config::{ServerConfig, StdioProtocol};
 use crate::error::AppError;
 
-pub fn alternate_protocol(protocol: &StdioProtocol) -> StdioProtocol {
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum NegotiatedStdioProtocol {
+    ContentLength,
+    JsonLines,
+}
+
+pub fn alternate_protocol(protocol: NegotiatedStdioProtocol) -> NegotiatedStdioProtocol {
     match protocol {
-        StdioProtocol::Auto => StdioProtocol::ContentLength,
-        StdioProtocol::ContentLength => StdioProtocol::JsonLines,
-        StdioProtocol::JsonLines => StdioProtocol::ContentLength,
+        NegotiatedStdioProtocol::ContentLength => NegotiatedStdioProtocol::JsonLines,
+        NegotiatedStdioProtocol::JsonLines => NegotiatedStdioProtocol::ContentLength,
     }
 }
 
-pub fn infer_protocol_from_server(server: &ServerConfig) -> Option<StdioProtocol> {
-    let mut merged = server.command.to_ascii_lowercase();
-    if !server.args.is_empty() {
-        merged.push(' ');
-        merged.push_str(&server.args.join(" ").to_ascii_lowercase());
+pub fn protocol_label(protocol: NegotiatedStdioProtocol) -> &'static str {
+    match protocol {
+        NegotiatedStdioProtocol::ContentLength => "content-length",
+        NegotiatedStdioProtocol::JsonLines => "json-lines",
     }
-
-    const JSONL_PATTERNS: &[&str] = &["@modelcontextprotocol/server-filesystem", "@playwright/mcp"];
-    if JSONL_PATTERNS
-        .iter()
-        .any(|pattern| merged.contains(pattern))
-    {
-        return Some(StdioProtocol::JsonLines);
-    }
-
-    None
 }
 
 pub fn should_attempt_protocol_fallback(
@@ -51,30 +44,17 @@ pub fn should_attempt_protocol_fallback(
 
 #[cfg(test)]
 mod tests {
-    use std::collections::HashMap;
-
     use super::*;
-    use crate::config::{LifecycleMode, ServerConfig};
 
     #[test]
-    fn infer_json_lines_known_server() {
-        let server = ServerConfig {
-            name: "filesystem".to_string(),
-            description: String::new(),
-            command: "npx".to_string(),
-            args: vec![
-                "-y".to_string(),
-                "@modelcontextprotocol/server-filesystem".to_string(),
-            ],
-            cwd: String::new(),
-            env: HashMap::new(),
-            lifecycle: Some(LifecycleMode::Pooled),
-            stdio_protocol: StdioProtocol::Auto,
-            enabled: true,
-        };
+    fn alternate_protocol_switches_between_supported_framings() {
         assert_eq!(
-            infer_protocol_from_server(&server),
-            Some(StdioProtocol::JsonLines)
+            alternate_protocol(NegotiatedStdioProtocol::ContentLength),
+            NegotiatedStdioProtocol::JsonLines
+        );
+        assert_eq!(
+            alternate_protocol(NegotiatedStdioProtocol::JsonLines),
+            NegotiatedStdioProtocol::ContentLength
         );
     }
 }

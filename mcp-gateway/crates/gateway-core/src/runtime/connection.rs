@@ -1,15 +1,19 @@
+use std::collections::VecDeque;
 use std::path::Path;
+use std::sync::Arc;
 use std::time::Duration;
 
 use serde_json::json;
 use tokio::io::{AsyncBufReadExt, BufReader};
 use tokio::process::{Child, ChildStdin, ChildStdout, Command};
+use tokio::sync::Mutex;
 use tokio::time::timeout;
 
-use crate::config::{ServerConfig, StdioProtocol};
+use crate::config::ServerConfig;
 use crate::error::AppError;
 
 use super::io_codec::{read_message, write_message};
+use super::protocol_negotiation::NegotiatedStdioProtocol;
 
 #[cfg(target_os = "windows")]
 const CREATE_NO_WINDOW: u32 = 0x0800_0000;
@@ -23,15 +27,21 @@ fn configure_spawn_command(command: &mut Command) {
 #[cfg(not(target_os = "windows"))]
 fn configure_spawn_command(_command: &mut Command) {}
 
+const MAX_CAPTURED_STDERR_LINES: usize = 80;
+
 pub struct ProcessConnection {
     child: Child,
     stdin: ChildStdin,
     stdout: BufReader<ChildStdout>,
-    stdio_protocol: StdioProtocol,
+    stdio_protocol: NegotiatedStdioProtocol,
+    stderr_lines: Arc<Mutex<VecDeque<String>>>,
 }
 
 impl ProcessConnection {
-    pub async fn spawn(server: &ServerConfig) -> Result<Self, AppError> {
+    pub async fn spawn(
+        server: &ServerConfig,
+        stdio_protocol: NegotiatedStdioProtocol,
+    ) -> Result<Self, AppError> {
         let resolved_command = resolve_command(server.command.trim());
         let mut command = Command::new(&resolved_command);
         command.args(&server.args);
@@ -61,8 +71,12 @@ impl ProcessConnection {
             .stdout
             .take()
             .ok_or_else(|| AppError::Internal("missing stdout for spawned process".to_string()))?;
+        let stderr_lines = Arc::new(Mutex::new(VecDeque::with_capacity(
+            MAX_CAPTURED_STDERR_LINES,
+        )));
 
         if let Some(stderr) = child.stderr.take() {
+            let stderr_lines = stderr_lines.clone();
             tokio::spawn(async move {
                 let mut reader = BufReader::new(stderr).lines();
                 while let Ok(Some(line)) = reader.next_line().await {
@@ -70,6 +84,11 @@ impl ProcessConnection {
                     if message.is_empty() {
                         continue;
                     }
+                    let mut guard = stderr_lines.lock().await;
+                    if guard.len() == MAX_CAPTURED_STDERR_LINES {
+                        let _ = guard.pop_front();
+                    }
+                    guard.push_back(message.to_string());
                 }
             });
         }
@@ -78,7 +97,8 @@ impl ProcessConnection {
             child,
             stdin,
             stdout: BufReader::new(stdout),
-            stdio_protocol: server.stdio_protocol.clone(),
+            stdio_protocol,
+            stderr_lines,
         })
     }
 
@@ -89,7 +109,7 @@ impl ProcessConnection {
         max_response_wait_iterations: u32,
     ) -> Result<serde_json::Value, AppError> {
         let expected_id = request.get("id").cloned();
-        write_message(&mut self.stdin, request, &self.stdio_protocol).await?;
+        write_message(&mut self.stdin, request, self.stdio_protocol).await?;
 
         if expected_id.is_none() {
             return Ok(json!({"ok": true}));
@@ -99,7 +119,7 @@ impl ProcessConnection {
         while iterations < max_response_wait_iterations {
             let message = timeout(
                 timeout_duration,
-                read_message(&mut self.stdout, &self.stdio_protocol),
+                read_message(&mut self.stdout, self.stdio_protocol),
             )
             .await
             .map_err(|_| {
@@ -119,7 +139,12 @@ impl ProcessConnection {
     }
 
     pub async fn notify(&mut self, notification: &serde_json::Value) -> Result<(), AppError> {
-        write_message(&mut self.stdin, notification, &self.stdio_protocol).await
+        write_message(&mut self.stdin, notification, self.stdio_protocol).await
+    }
+
+    pub async fn stderr_snapshot(&self) -> String {
+        let guard = self.stderr_lines.lock().await;
+        guard.iter().cloned().collect::<Vec<_>>().join("\n")
     }
 
     pub async fn shutdown(&mut self) -> Result<(), AppError> {

@@ -77,7 +77,7 @@ export interface ServerConfig {
   cwd: string;
   env: Record<string, string>;
   lifecycle: "pooled" | "per_request" | null;
-  stdioProtocol: "auto" | "content_length" | "json_lines";
+  stdioProtocol: "auto";
   enabled: boolean;
 }
 
@@ -105,7 +105,12 @@ export interface HealthData {
 
 export interface ServerConnectivityTestResult {
   ok: boolean;
-  initialize: JsonValue;
+  status?: "ok" | "auth_required";
+  message?: string;
+  authUrl?: string;
+  browserOpened?: boolean;
+  waitingForAuthorization?: boolean;
+  initialize?: JsonValue;
   testedAt: string;
 }
 

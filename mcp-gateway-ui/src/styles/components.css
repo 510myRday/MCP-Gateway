@@ -245,6 +245,11 @@ html, body {
   background: rgba(166, 227, 161, 0.12);
   border-color: rgba(166, 227, 161, 0.35);
 }
+.server-test-chip.auth_required {
+  color: var(--accent-yellow);
+  background: rgba(249, 226, 175, 0.12);
+  border-color: rgba(249, 226, 175, 0.35);
+}
 .server-test-chip.failed {
   color: var(--accent-red);
   background: rgba(243, 139, 168, 0.12);
