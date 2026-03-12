@@ -66,6 +66,7 @@ function serversToJson(servers: ServerConfig[]): Record<string, unknown> {
     obj[s.name || `server_${Math.random().toString(36).slice(2, 6)}`] = {
       command: s.command,
       args: s.args,
+      enabled: s.enabled,
       ...(s.env && Object.keys(s.env).length > 0 ? { env: s.env } : {}),
     };
   }
@@ -74,8 +75,13 @@ function serversToJson(servers: ServerConfig[]): Record<string, unknown> {
 
 // ── claude_desktop_config 格式 → servers ─────────────────────────
 function jsonToServers(obj: Record<string, unknown>): ServerConfig[] {
+  // 兼容 Cursor mcp.json 格式：顶层包了一层 mcpServers
+  const keys = Object.keys(obj);
+  if (keys.length === 1 && keys[0] === "mcpServers" && obj["mcpServers"] && typeof obj["mcpServers"] === "object" && !Array.isArray(obj["mcpServers"])) {
+    obj = obj["mcpServers"] as Record<string, unknown>;
+  }
   return Object.entries(obj).map(([name, val]) => {
-    const v = val as { command?: string; args?: string[]; env?: Record<string, string> };
+    const v = val as { command?: string; args?: string[]; env?: Record<string, string>; enabled?: boolean };
     return {
       name,
       command: v.command ?? "",
@@ -85,7 +91,7 @@ function jsonToServers(obj: Record<string, unknown>): ServerConfig[] {
       cwd: "",
       lifecycle: null,
       stdioProtocol: "auto" as const,
-      enabled: true,
+      enabled: v.enabled !== false,
     };
   });
 }
