@@ -170,6 +170,12 @@ const translations = {
 
     // 语言切换
     langToggle: "English",
+
+    // 版本更新
+    updateAvailable: "发现新版本",
+    updateViewRelease: "查看更新",
+    updateDismiss: "关闭更新提示",
+    updateCurrentOutdated: "当前版本已过时",
   },
   en: {
     // Topbar
@@ -339,6 +345,12 @@ const translations = {
 
     // Language toggle
     langToggle: "中文",
+
+    // Update banner
+    updateAvailable: "New version available",
+    updateViewRelease: "View release",
+    updateDismiss: "Dismiss update notice",
+    updateCurrentOutdated: "your current version is outdated",
   },
 } as const;
 

@@ -52,6 +52,8 @@ jobs:
       - name: Build frontend dist
         run: npm run build
         working-directory: mcp-gateway-ui
+        env:
+          VITE_APP_VERSION: ${{ github.ref_name }}
 
       - name: Install Linux system deps for Tauri
         if: runner.os == 'Linux'

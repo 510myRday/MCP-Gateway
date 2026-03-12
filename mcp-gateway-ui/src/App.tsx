@@ -46,6 +46,8 @@ import type {
 } from "./types";
 import { useT, type Lang } from "./i18n";
 import JsonEditor from "./components/JsonEditor";
+import { useUpdateCheck } from "./hooks/useUpdateCheck";
+import { UpdateBanner } from "./components/UpdateBanner";
 
 // ── 工具：args 字符串 ↔ 数组 ──────────────────────────────────────
 function argsToStr(args: string[]): string {
@@ -247,6 +249,8 @@ interface EditableConfigSnapshot {
 
 type EndpointTransportType = "sse" | "streamable-http";
 
+// 版本号由 Vite 在编译时注入（CI 时来自 git tag，本地开发时来自 package.json）
+const CURRENT_VERSION = import.meta.env.VITE_APP_VERSION as string;
 const BLOG_URL = "https://blog.aiguicai.com";
 const GITHUB_URL = "https://github.com/510myRday/MCP-Gateway";
 const TG_GROUP_URL = "https://t.me/+vq8WByYtPoQ1MjA1";
@@ -911,6 +915,12 @@ function App() {
     (localStorage.getItem("mcp-lang") as Lang) ?? "zh"
   );
   const t = useT(lang);
+  const updateInfo = useUpdateCheck(CURRENT_VERSION);
+  const [dismissedVersion, setDismissedVersion] = useState(
+    () => localStorage.getItem("mcp-update-dismissed") ?? ""
+  );
+  const updateDismissed =
+    !!updateInfo?.latestVersion && updateInfo.latestVersion === dismissedVersion;
   const toggleLang = () => {
     const next: Lang = lang === "zh" ? "en" : "zh";
     setLang(next);
@@ -1731,6 +1741,20 @@ function App() {
 
   return (
     <div className="app-root">
+
+      {/* ── 版本更新 Banner ── */}
+      {updateInfo && updateInfo.hasUpdate && !updateDismissed && (
+        <UpdateBanner
+          info={updateInfo}
+          lang={lang}
+          onDismiss={() => {
+            if (updateInfo.latestVersion) {
+              setDismissedVersion(updateInfo.latestVersion);
+              localStorage.setItem("mcp-update-dismissed", updateInfo.latestVersion);
+            }
+          }}
+        />
+      )}
 
       {/* ── 顶栏 ── */}
       <div className="topbar">

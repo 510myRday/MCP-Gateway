@@ -1363,3 +1363,63 @@ html, body {
   line-height: 1;
 }
 
+/* ── 版本更新 Banner ── */
+.update-banner {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 16px;
+  background-color: rgba(137, 180, 250, 0.12);
+  background-color: color-mix(in srgb, var(--accent-blue) 12%, transparent);
+  border-bottom: 1px solid rgba(137, 180, 250, 0.3);
+  border-bottom: 1px solid color-mix(in srgb, var(--accent-blue) 30%, transparent);
+  font-size: 12px;
+  line-height: 1.4;
+  flex-shrink: 0;
+}
+
+.update-banner-text {
+  flex: 1;
+  color: var(--text-primary);
+}
+
+.update-banner-link {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 2px 8px;
+  border: 1px solid var(--accent-blue);
+  border-radius: 4px;
+  background: transparent;
+  color: var(--accent-blue);
+  font-size: 11px;
+  font-weight: 500;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: background 0.15s;
+}
+
+.update-banner-link:hover {
+  background-color: rgba(137, 180, 250, 0.15);
+  background-color: color-mix(in srgb, var(--accent-blue) 15%, transparent);
+}
+
+.update-banner-close {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 20px;
+  height: 20px;
+  border: none;
+  border-radius: 4px;
+  background: transparent;
+  color: var(--text-secondary);
+  cursor: pointer;
+  flex-shrink: 0;
+  transition: background 0.15s, color 0.15s;
+}
+
+.update-banner-close:hover {
+  background-color: var(--bg-hover);
+  color: var(--text-primary);
+}
