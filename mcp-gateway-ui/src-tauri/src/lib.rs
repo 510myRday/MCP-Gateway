@@ -10,8 +10,8 @@ use std::{fs, io};
 
 use chrono::Utc;
 use gateway_core::{
-    load_config_from_path, ConfigService, GatewayConfig, ProcessManager, ServerAuthState,
-    ServerConfig, SkillCommandRule,
+    detect_terminal_encoding_status, load_config_from_path, ConfigService, GatewayConfig,
+    ProcessManager, ServerAuthState, ServerConfig, SkillCommandRule, TerminalEncodingStatus,
 };
 use gateway_http::{build_router, spawn_idle_reaper, AppState, SkillsService, SseHub};
 use serde::Serialize;
@@ -69,7 +69,9 @@ fn build_ui_process_manager() -> ProcessManager {
 
 fn active_process_manager(state: &State<'_, GatewayProcessState>) -> Option<ProcessManager> {
     let guard = state.inner.lock().ok()?;
-    guard.as_ref().map(|managed| managed.process_manager.clone())
+    guard
+        .as_ref()
+        .map(|managed| managed.process_manager.clone())
 }
 
 struct ManagedGateway {
@@ -129,6 +131,7 @@ struct LocalRuntimeSummary {
     python: LocalRuntimeAvailability,
     node: LocalRuntimeAvailability,
     uv: LocalRuntimeAvailability,
+    terminal: TerminalEncodingStatus,
 }
 
 struct VersionProbeCommand {
@@ -514,6 +517,7 @@ fn detect_local_runtimes() -> LocalRuntimeSummary {
         python: detect_python_runtime(),
         node: detect_node_runtime(),
         uv: detect_uv_runtime(),
+        terminal: detect_terminal_encoding_status(),
     }
 }
 

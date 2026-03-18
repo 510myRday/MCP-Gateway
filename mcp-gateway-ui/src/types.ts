@@ -191,8 +191,19 @@ export interface LocalRuntimeAvailability {
   version: string | null;
 }
 
+export interface TerminalEncodingStatus {
+  shell: string;
+  detected: boolean;
+  isUtf8: boolean;
+  codePage: number | null;
+  inputCodePage: number | null;
+  outputCodePage: number | null;
+  autoFixOnLaunch: boolean;
+}
+
 export interface LocalRuntimeSummary {
   python: LocalRuntimeAvailability;
   node: LocalRuntimeAvailability;
   uv: LocalRuntimeAvailability;
+  terminal: TerminalEncodingStatus;
 }

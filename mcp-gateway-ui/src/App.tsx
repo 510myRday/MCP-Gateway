@@ -46,6 +46,7 @@ import type {
   SkillRootEntry,
   SkillPolicyAction,
   SkillsConfig,
+  TerminalEncodingStatus,
 } from "./types";
 import { useT, type Lang } from "./i18n";
 import JsonEditor from "./components/JsonEditor";
@@ -257,6 +258,39 @@ function runtimeDisplayValue(
     return t("runtimeNotInstalled");
   }
   return runtime.version?.trim() || t("runtimeDetectFailed");
+}
+
+function terminalEncodingDisplayValue(
+  terminal: TerminalEncodingStatus | undefined,
+  loading: boolean,
+  failed: boolean,
+  t: ReturnType<typeof useT>,
+): string {
+  if (loading) {
+    return t("runtimeChecking");
+  }
+  if (failed || !terminal || !terminal.detected) {
+    return t("runtimeDetectFailed");
+  }
+  if (terminal.isUtf8) {
+    if (terminal.codePage) {
+      return t("runtimeUtf8CodePageValue").replace("{codePage}", String(terminal.codePage));
+    }
+    return t("runtimeUtf8Value");
+  }
+  if (terminal.autoFixOnLaunch) {
+    if (terminal.codePage) {
+      return t("runtimeNonUtf8AutoFixCodePageValue").replace(
+        "{codePage}",
+        String(terminal.codePage),
+      );
+    }
+    return t("runtimeNonUtf8AutoFixValue");
+  }
+  if (terminal.codePage) {
+    return t("runtimeCodePageValue").replace("{codePage}", String(terminal.codePage));
+  }
+  return t("runtimeNonUtf8Value");
 }
 
 interface EditableConfigSnapshot {
@@ -2037,6 +2071,16 @@ function App() {
       key: "uv",
       label: t("runtimeUv"),
       value: runtimeDisplayValue(localRuntimeSummary?.uv, runtimeLoading, localRuntimeDetectFailed, t),
+    },
+    {
+      key: "terminal",
+      label: t("runtimeTerminal"),
+      value: terminalEncodingDisplayValue(
+        localRuntimeSummary?.terminal,
+        runtimeLoading,
+        localRuntimeDetectFailed,
+        t,
+      ),
     },
   ]), [localRuntimeDetectFailed, localRuntimeSummary, runtimeLoading, t]);
 

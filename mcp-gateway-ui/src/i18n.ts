@@ -34,9 +34,16 @@ const translations = {
     runtimePython: "Python",
     runtimeNode: "Node",
     runtimeUv: "UV",
+    runtimeTerminal: "终端编码",
     runtimeChecking: "检测中",
     runtimeNotInstalled: "未安装",
     runtimeDetectFailed: "检测失败",
+    runtimeUtf8Value: "UTF-8",
+    runtimeUtf8CodePageValue: "UTF-8 (CP {codePage})",
+    runtimeNonUtf8Value: "非 UTF-8",
+    runtimeCodePageValue: "CP {codePage}",
+    runtimeNonUtf8AutoFixValue: "非 UTF-8，启动时自动切换",
+    runtimeNonUtf8AutoFixCodePageValue: "CP {codePage}，启动时自动切 UTF-8",
 
     // Skills
     skillsConfig: "Skill MCP",
@@ -221,9 +228,16 @@ const translations = {
     runtimePython: "Python",
     runtimeNode: "Node",
     runtimeUv: "UV",
+    runtimeTerminal: "Terminal Encoding",
     runtimeChecking: "Checking",
     runtimeNotInstalled: "Not installed",
     runtimeDetectFailed: "Check failed",
+    runtimeUtf8Value: "UTF-8",
+    runtimeUtf8CodePageValue: "UTF-8 (CP {codePage})",
+    runtimeNonUtf8Value: "Non-UTF-8",
+    runtimeCodePageValue: "CP {codePage}",
+    runtimeNonUtf8AutoFixValue: "Non-UTF-8, auto-fix on launch",
+    runtimeNonUtf8AutoFixCodePageValue: "CP {codePage}, auto-switch to UTF-8 on launch",
 
     // Skills
     skillsConfig: "Skill MCP",

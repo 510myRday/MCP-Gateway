@@ -1,6 +1,7 @@
 pub mod config;
 pub mod error;
 pub mod runtime;
+pub mod terminal;
 
 pub use config::{
     apply_runtime_overrides, default_config_path, generate_token, init_default_config,
@@ -12,3 +13,7 @@ pub use config::{
 };
 pub use error::{AppError, ErrorCode};
 pub use runtime::{AuthOrchestrator, AuthSessionStatus, ProcessManager, ServerAuthState};
+pub use terminal::{
+    detect_terminal_encoding_status, is_powershell_like_command,
+    wrap_windows_powershell_command_for_utf8, TerminalEncodingStatus,
+};

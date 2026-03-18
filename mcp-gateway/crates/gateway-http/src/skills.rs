@@ -6,7 +6,8 @@ use std::time::{Duration, Instant};
 
 use chrono::{DateTime, Utc};
 use gateway_core::{
-    AppError, ErrorCode, GatewayConfig, SkillCommandRule, SkillPolicyAction, SkillsConfig,
+    wrap_windows_powershell_command_for_utf8, AppError, ErrorCode, GatewayConfig, SkillCommandRule,
+    SkillPolicyAction, SkillsConfig,
 };
 use serde::Deserialize;
 use serde_json::{json, Value};
@@ -1213,16 +1214,15 @@ fn frontmatter_value_summary(value: &Value) -> String {
 
 fn shell_command_for_current_os(cmd: &str) -> (String, Vec<String>) {
     if cfg!(target_os = "windows") {
-        (
-            "powershell".to_string(),
-            vec![
-                "-NoProfile".to_string(),
-                "-ExecutionPolicy".to_string(),
-                "Bypass".to_string(),
-                "-Command".to_string(),
-                cmd.to_string(),
-            ],
-        )
+        let runner = "powershell".to_string();
+        let args = vec![
+            "-NoProfile".to_string(),
+            "-ExecutionPolicy".to_string(),
+            "Bypass".to_string(),
+            "-Command".to_string(),
+            cmd.to_string(),
+        ];
+        wrap_windows_powershell_command_for_utf8(&runner, &args).unwrap_or((runner, args))
     } else {
         ("sh".to_string(), vec!["-lc".to_string(), cmd.to_string()])
     }
@@ -2341,6 +2341,11 @@ mod tests {
         } else {
             "printf 'waiting for input\\n'; sleep 5"
         };
+        let timeout_ms = if cfg!(target_os = "windows") {
+            800
+        } else {
+            250
+        };
         let (runner, runner_args) = shell_command_for_current_os(command_text);
         let mut command = Command::new(&runner);
         command
@@ -2350,13 +2355,13 @@ mod tests {
             .stderr(std::process::Stdio::piped());
         configure_skill_command(&mut command);
 
-        let error = execute_skill_command(&mut command, 250, 4096, false)
+        let error = execute_skill_command(&mut command, timeout_ms, 4096, false)
             .await
             .expect_err("command should time out");
 
         match error {
             AppError::Upstream(message) => {
-                assert!(message.contains("command timed out after 250ms"));
+                assert!(message.contains(&format!("command timed out after {timeout_ms}ms")));
                 assert!(message.contains("Last output:"));
                 assert!(message.contains("waiting for input"));
             }

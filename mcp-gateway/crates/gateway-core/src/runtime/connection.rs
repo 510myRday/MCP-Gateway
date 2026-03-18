@@ -7,6 +7,7 @@ use tokio::process::{Child, ChildStdin, ChildStdout, Command};
 use tokio::time::timeout;
 
 use crate::error::AppError;
+use crate::terminal::wrap_windows_powershell_command_for_utf8;
 
 use super::auth::{AuthOrchestrator, AuthSignalSource, PreparedServerLaunch, RuntimeAuthState};
 use super::io_codec::{read_message, write_message};
@@ -40,8 +41,11 @@ impl ProcessConnection {
     ) -> Result<Self, AppError> {
         let auth_state = RuntimeAuthState::new(auth.clone(), prepared.clone()).await;
         let resolved_command = resolve_command(prepared.server.command.trim());
-        let mut command = Command::new(&resolved_command);
-        command.args(&prepared.server.args);
+        let (launch_command, launch_args) =
+            wrap_windows_powershell_command_for_utf8(&resolved_command, &prepared.server.args)
+                .unwrap_or_else(|| (resolved_command.clone(), prepared.server.args.clone()));
+        let mut command = Command::new(&launch_command);
+        command.args(&launch_args);
 
         if !prepared.server.cwd.trim().is_empty() {
             command.current_dir(Path::new(&prepared.server.cwd));
