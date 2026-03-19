@@ -12,7 +12,7 @@ const CREATE_NO_WINDOW: u32 = 0x0800_0000;
 const UTF8_CODE_PAGE: u32 = 65001;
 
 #[cfg(target_os = "windows")]
-const POWERSHELL_UTF8_PRELUDE: &str = "$__mcpGatewayUtf8 = New-Object System.Text.UTF8Encoding($false); [Console]::InputEncoding = $__mcpGatewayUtf8; [Console]::OutputEncoding = $__mcpGatewayUtf8; $OutputEncoding = $__mcpGatewayUtf8; chcp 65001 > $null";
+const POWERSHELL_UTF8_PRELUDE: &str = "$__mcpGatewayUtf8 = New-Object System.Text.UTF8Encoding($false); [Console]::InputEncoding = $__mcpGatewayUtf8; [Console]::OutputEncoding = $__mcpGatewayUtf8; $OutputEncoding = $__mcpGatewayUtf8; $PSDefaultParameterValues['*:Encoding'] = 'utf8'; chcp 65001 > $null";
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]
@@ -233,6 +233,7 @@ mod tests {
             assert_eq!(command, "powershell");
             assert_eq!(args[0], "-Command");
             assert!(args[1].contains("chcp 65001"));
+            assert!(args[1].contains("$PSDefaultParameterValues['*:Encoding'] = 'utf8'"));
             assert!(args[1].contains("Write-Host '中文'"));
         } else {
             assert!(wrapped.is_none());
