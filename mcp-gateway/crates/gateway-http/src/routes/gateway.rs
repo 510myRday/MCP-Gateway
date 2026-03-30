@@ -2,8 +2,8 @@ use std::convert::Infallible;
 
 use axum::extract::{Path, State};
 use axum::http::{HeaderMap, HeaderValue, StatusCode};
-use axum::response::IntoResponse;
 use axum::response::sse::{Event, KeepAlive, Sse};
+use axum::response::IntoResponse;
 use axum::routing::{get, post};
 use axum::{Json, Router};
 use futures_util::stream::{self, Stream, StreamExt};
@@ -78,13 +78,15 @@ fn session_scoped_server(
     scoped
 }
 
-fn json_response(status: StatusCode, payload: Value, session_id: Option<&str>) -> axum::response::Response {
+fn json_response(
+    status: StatusCode,
+    payload: Value,
+    session_id: Option<&str>,
+) -> axum::response::Response {
     let mut response = (status, Json(payload)).into_response();
     if let Some(session_id) = session_id {
         if let Ok(value) = HeaderValue::from_str(session_id) {
-            response
-                .headers_mut()
-                .insert(MCP_SESSION_ID_HEADER, value);
+            response.headers_mut().insert(MCP_SESSION_ID_HEADER, value);
         }
     }
     response
@@ -94,9 +96,7 @@ fn empty_response(status: StatusCode, session_id: Option<&str>) -> axum::respons
     let mut response = status.into_response();
     if let Some(session_id) = session_id {
         if let Ok(value) = HeaderValue::from_str(session_id) {
-            response
-                .headers_mut()
-                .insert(MCP_SESSION_ID_HEADER, value);
+            response.headers_mut().insert(MCP_SESSION_ID_HEADER, value);
         }
     }
     response
